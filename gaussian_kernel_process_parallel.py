@@ -3,8 +3,8 @@ import h5py as hf
 import scipy.spatial as sp
 from tqdm import tqdm
 import multiprocessing
-import os
 import concurrent.futures
+
 
 class GaussianKernel:
     """
@@ -42,7 +42,6 @@ class GaussianKernel:
         kernel_width: np.ndarray (number_kernel, 1)
             array of the width of the kernels
         """
-        self.i = None
         self.load_directory = load_directory
         self.number_kernel = number_kernel
         self.number_agents = number_agents
@@ -85,6 +84,8 @@ class GaussianKernel:
 
     def set_kernels(self):
         """
+        Sets kernel positions and kernel randomly.
+
         Chooses Kernel positions by choosing a random timestep
             + random agent for each Kernel
         Chooses Kernel widths by setting it to distance to 5th neighbour using scipy.spatial.KDTree
@@ -134,9 +135,7 @@ class GaussianKernel:
 
     def calc(self, colloid_pos_at_t, colloid_velocity_at_t, kernel_pos, kernel_width):
         """
-        Calculates r vector components r1,r2,r3 by summing over the Psi function of each kernel for all agents
-        but only at one timestep
-        r1 position, r2 x-velocity, r3 y-velocity
+        Calculates the system describing vector for one timestep
 
         Parameters
         ----------
@@ -171,11 +170,12 @@ class GaussianKernel:
     
     def run_worker(self, data_chunk):
         """
+        Worker function for parallelization
+
         Returns
         -------
         r: list
-            list of r_vector_at_t
-            (chunk_size)
+            list of r vectors for each timestep
         """
         r = []
         for system_data_at_t in tqdm(data_chunk):
@@ -184,6 +184,7 @@ class GaussianKernel:
     
     def run(self):
         """
+        loads data, sets kernels, runs worker function in parallel
 
         Returns
         -------
@@ -194,28 +195,14 @@ class GaussianKernel:
         """
         self.load_data()
         self.set_kernels()
-        num_workers = 4 #multiprocessing.cpu_count()  # Number of CPU cores
-        pool = multiprocessing.Pool(processes=num_workers)
+        num_workers = multiprocessing.cpu_count()-2  # Number of CPU cores
 
         chunk_size = len(self.colloid_pos) // num_workers
         pos_velocity_combined = [(self.colloid_pos[i], self.colloid_velocity[i]) for i in range(len(self.colloid_pos))]
         data_chunks = [pos_velocity_combined[i:i+chunk_size] for i in range(0, len(self.colloid_pos), chunk_size)]
 
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
-            results = executor.map(lambda chunk: self.run_worker(chunk), data_chunks)
-        #r = pool.map(self.run_worker, data_chunks, chunksize=chunk_size)
-        #pool.close()
-        #pool.join()
-        print(results)
-        return {"inputs": None, "targets": self.predator_pos}
+            results = list(executor.map(self.run_worker, data_chunks))
+        results = np.concatenate(np.array(results))
 
-number_kernel = 300
-dataclass = GaussianKernel(load_directory = "/tikhome/jscheunemann/work/test300",
-                           number_kernel=number_kernel)
-data = dataclass.run()
-#print(len(data["inputs"]))
-#from gaussian_kernel_process import GaussianKernel as GK2
-#dataclass2 = GK2(load_directory = "/tikhome/jscheunemann/work/test300",
-#                           number_kernel=number_kernel)
-#data = dataclass2.run()
-#print(len(data["inputs"]))
+        return {"inputs": results, "targets": self.predator_pos}
