@@ -178,7 +178,7 @@ class GaussianKernel:
             list of r vectors for each timestep
         """
         r = []
-        for system_data_at_t in tqdm(data_chunk):
+        for system_data_at_t in tqdm(data_chunk, ncols=80):
             r.append(self.calc(system_data_at_t[0], system_data_at_t[1], self.kernel_pos, self.kernel_width))
         return r
     
